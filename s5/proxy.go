@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -241,11 +242,27 @@ func (p *Proxy) doAuth(conn net.Conn) (string, bool) {
 }
 
 func (p *Proxy) isAllowed(addr string) bool {
-	host, _, _ := net.SplitHostPort(addr)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
 
+	// 先检查是否直接匹配（IP or 域名）
 	for _, allow := range p.whitelist {
-		if allow == host {
+		if strings.HasPrefix(allow, "*.") {
+			// 通配符匹配：例如 *.example.org
+			suffix := strings.TrimPrefix(allow, "*.")
+			if strings.HasSuffix(host, "."+suffix) {
+				return true
+			}
+		} else if allow == host {
 			return true
+		}
+	}
+	// 再解析白名单域名为 IP，匹配目标 host 是否是 IP
+	for _, allow := range p.whitelist {
+		if strings.Contains(allow, "*") {
+			continue // 通配符已处理
 		}
 		ips, err := net.LookupHost(allow)
 		if err != nil {

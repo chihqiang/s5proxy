@@ -78,7 +78,7 @@ func (a *App) reload() error {
 	}
 
 	// 创建新代理并启动
-	a.proxy = s5.New(cfg.Listen, cfg.MaxConns, cfg.Users, cfg.AllowedIPs)
+	a.proxy = s5.New(cfg.Listen, cfg.MaxConns, cfg.Users, cfg.AllowedHosts)
 	slog.Info("Starting new proxy...")
 	go func() {
 		if err := a.proxy.Start(); err != nil {
