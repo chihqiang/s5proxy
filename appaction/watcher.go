@@ -1,4 +1,4 @@
-package watcher
+package appaction
 
 import (
 	"log/slog"
@@ -8,10 +8,10 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// WatchConfig 监听配置文件变化
+// watchConfig 监听配置文件变化
 // path: 绝对路径或相对路径
 // onChange: 配置变动时触发的回调函数（带防抖）
-func WatchConfig(path string, onChange func()) error {
+func watchConfig(path string, onChange func()) error {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
