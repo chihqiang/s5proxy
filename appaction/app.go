@@ -2,91 +2,94 @@ package appaction
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
+	"time"
+
 	"wangzhiqiang/s5proxy/conf"
 	"wangzhiqiang/s5proxy/s5"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/viper"
 )
 
 type App struct {
-	mu         sync.Mutex
-	cfgPaths   []string
-	activePath string
-	proxy      *s5.Proxy
-	stopCtx    context.Context
-	cancelFunc context.CancelFunc
+	mu       sync.Mutex
+	filename string
+	proxy    *s5.Proxy
 }
 
-func NewApp(cfgPaths []string) *App {
-	return &App{
-		cfgPaths: cfgPaths,
-	}
+func NewApp(filename string) *App {
+	return &App{filename: filename}
 }
 
-func (a *App) Run() {
-	a.stopCtx, a.cancelFunc = context.WithCancel(context.Background())
+func (a *App) Run(ctx context.Context) error {
+	viper.SetConfigFile(a.filename)
+
 	if err := a.reload(); err != nil {
-		slog.Error("Initialization failed", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	if err := watchConfig(a.activePath, func() {
-		slog.Warn("Configuration file changed, reloading...")
-		a.shutdown()
-		if err := a.reload(); err != nil {
-			slog.Error("Reload failed", slog.String("error", err.Error()))
-		}
-	}); err != nil {
-		slog.Error("Failed to watch config file", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	<-sigs
-	slog.Info("Received exit signal, cleaning up...")
-	a.shutdown()
-	slog.Info("Exited cleanly.")
-}
-
-// reload 加载配置，停止旧代理，启动新代理
-func (a *App) reload() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	cfg, usedPath, err := conf.LoadConfig(a.cfgPaths...)
-	if err != nil {
 		return err
 	}
-	a.activePath = usedPath
-
-	// 关闭旧代理
-	if a.proxy != nil {
-		slog.Info("Stopping existing proxy...")
-		a.proxy.Stop()
-		a.proxy = nil
-	}
-
-	// 创建新代理并启动
-	a.proxy = s5.New(cfg.Listen, cfg.MaxConns, cfg.Users, cfg.AllowedHosts)
-	slog.Info("Starting new proxy...")
-	go func() {
-		if err := a.proxy.Start(); err != nil {
-			slog.Error("Proxy start error", "error", err)
+	viper.WatchConfig()
+	var (
+		debounceTimer *time.Timer
+		debounceDelay = 500 * time.Millisecond
+	)
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
 		}
-	}()
+		debounceTimer = time.AfterFunc(debounceDelay, func() {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+
+			slog.Info("Config file changed", "file", e.Name)
+			a.shutdown()
+			if err := a.reload(); err != nil {
+				slog.Error("Config reload failed", "error", err)
+			}
+		})
+	})
+	// Block until context is done
+	<-ctx.Done()
+	slog.Info("Shutting down proxy")
+	a.shutdown()
 	return nil
 }
 
-// shutdown 优雅关闭代理和取消上下文
+func (a *App) reload() error {
+	cfg := &conf.Config{}
+	if err := viper.ReadInConfig(); err != nil {
+		slog.Error("Failed to read config file", "error", err)
+		return err
+	}
+	if err := viper.Unmarshal(cfg); err != nil {
+		slog.Error("Failed to parse YAML config", "error", err)
+		return err
+	}
+	// Validate required fields
+	if cfg.Listen == "" {
+		return errors.New("config 'listen' cannot be empty")
+	}
+	if len(cfg.Users) == 0 {
+		return errors.New("config 'users' cannot be empty")
+	}
+	// Stop old proxy if running
+	if a.proxy != nil {
+		a.proxy.Stop()
+		a.proxy = nil
+	}
+	// Start new proxy
+	a.proxy = s5.New(cfg.Listen, cfg.MaxConns, cfg.Users, cfg.AllowedHosts)
+	if err := a.proxy.Start(); err != nil {
+		slog.Error("Failed to start proxy", "error", err)
+		return err
+	}
+
+	return nil
+}
+
 func (a *App) shutdown() {
-	a.cancelFunc()
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.proxy != nil {
 		a.proxy.Stop()
 		a.proxy = nil
