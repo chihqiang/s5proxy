@@ -72,17 +72,24 @@ func (a *App) reload() error {
 	if len(cfg.Users) == 0 {
 		return errors.New("config 'users' cannot be empty")
 	}
-
-	pxys := proxy.Get(cfg)
+	// 如果没有代理，第一次启动
+	if len(a.proxies) == 0 {
+		a.shutdown()
+	}
 	var wg sync.WaitGroup
-	for _, pxy := range pxys {
+	var mu sync.Mutex
+	for _, pxy := range proxy.Get() {
 		wg.Add(1)
-		go func(pxy proxy.IProxy) {
+		go func(pxy proxy.IProxy, cfg *config.Config) {
 			defer wg.Done()
+			pxy.WithConfig(cfg)
 			if err := pxy.Start(); err != nil {
 				slog.Error("Failed to start proxy", "error", err)
 			}
-		}(pxy)
+			mu.Lock()
+			a.proxies = append(a.proxies, pxy)
+			mu.Unlock()
+		}(pxy, cfg)
 	}
 	wg.Wait()
 	return nil

@@ -19,11 +19,10 @@ var (
 	}
 )
 
-func Get(cfg *config.Config) []IProxy {
+func Get() []IProxy {
 	var ps []IProxy
 	for _, f := range proxies {
 		f2 := f()
-		f2.WithConfig(cfg)
 		ps = append(ps, f2)
 	}
 	return ps
