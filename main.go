@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"wangzhiqiang/s5proxy/appaction"
+	"wangzhiqiang/s5proxy/app"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -27,10 +27,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	g, ctx := errgroup.WithContext(ctx)
-	app := appaction.NewApp(filename)
+	a := app.NewApp(filename)
 	// Run the app in a goroutine
 	g.Go(func() error {
-		return app.Run(ctx)
+		return a.Run(ctx)
 	})
 	// Wait for everything to finish
 	if err := g.Wait(); err != nil {

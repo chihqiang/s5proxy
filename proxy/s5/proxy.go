@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"wangzhiqiang/s5proxy/config"
 )
 
 var (
@@ -43,6 +44,21 @@ func New(listen string, maxConns int, users map[string]string, whitelist []strin
 		connLimiter: make(chan struct{}, maxConns),
 		stopCh:      make(chan struct{}),
 	}
+}
+
+func (p *Proxy) WithConfig(cfg *config.Config) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if cfg.MaxConns <= 0 {
+		cfg.MaxConns = 1000
+	}
+	p.listenAddr = cfg.Listen
+	p.users = cfg.Users
+	p.whitelist = cfg.AllowedHosts
+	p.maxConns = cfg.MaxConns
+	p.connLimiter = make(chan struct{}, cfg.MaxConns)
+	p.stopCh = make(chan struct{})
 }
 
 // Start 启动 socks5 代理服务
