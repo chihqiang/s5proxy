@@ -1,0 +1,15 @@
+# 监听地址
+listen: ":1080"
+
+# 最大同时连接数
+max_conns: 100
+
+# 用户名密码认证列表
+users:
+  testuser: testpass
+
+# 允许的客户端 IP/域名 白名单（为空表示不限制）
+#allowed_hosts:
+#  - "127.0.0.1"
+#  - "::1"
+#  - "*.baidu.com"
